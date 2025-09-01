@@ -15,3 +15,6 @@ Ferramenta visual para desenhar formações/subtáticas, calcular offsets (`Δx`
   ```js
   { left: 789, top: 87, width: 2262, height: 1782 }
 
+- NUDGE_H = 1.386   // % por 1 toque D-pad horizontal (←/→)
+- NUDGE_V = 1.65    // % por 1 toque D-pad vertical (↑/↓)
+
