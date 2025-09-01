@@ -1,0 +1,142 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Click → X% / Y% (campo)</title>
+<style>
+  body{ font-family: Arial, sans-serif; background:#0b120b; color:#e6f6e6; display:flex; flex-direction:column; align-items:center; padding:20px; }
+  #canvasWrap{ position:relative; border:6px solid rgba(255,255,255,0.04); background:#000; }
+  canvas{ display:block; max-width:100%; height:auto; }
+  #info{ margin-top:12px; background:#08180f; padding:10px 14px; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.6); }
+  label{ display:block; margin-bottom:8px; }
+  input[type=file]{ color:#ddd; }
+  .coords{ font-weight:700; color:#bfe8c5; }
+</style>
+</head>
+<body>
+  <h2>Click → X% / Y% (campo)</h2>
+  <div style="max-width:1200px;">
+    <label>1) Carregue a screenshot do Editor Tático (arraste ou escolha arquivo):</label>
+    <input type="file" id="file" accept="image/*">
+  </div>
+  <div id="canvasWrap" style="margin-top:12px;">
+    <canvas id="c"></canvas>
+  </div>
+  <div id="info">
+    <div>Instruções: abra a imagem, ajuste o retângulo do campo clicando 2x para definir canto superior esquerdo e 2x para canto inferior direito (ou use o botão "Definir campo automatico"). Depois clique no centro do jogador para obter X / Y em % (bottom→top).</div>
+    <div style="margin-top:8px;">
+      <button id="autoField">Detectar campo automaticamente</button>
+      <button id="resetField">Resetar seleção campo</button>
+    </div>
+    <div style="margin-top:8px;">
+      <div><strong>Campo:</strong> <span id="fieldInfo">—</span></div>
+      <div><strong>Último clique (player):</strong> X = <span class="coords" id="xp">—</span>% , Y = <span class="coords" id="yp">—</span>%</div>
+      <div style="margin-top:6px;"><small>Dica: usar zoom do navegador para clicar com precisão.</small></div>
+    </div>
+  </div>
+
+<script>
+const fileInput = document.getElementById('file');
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const xpEl = document.getElementById('xp');
+const ypEl = document.getElementById('yp');
+const fieldInfo = document.getElementById('fieldInfo');
+let img = new Image();
+let pitchRect = null; // {left,top,width,height} em px da imagem original
+let clicksForField = [];
+
+fileInput.addEventListener('change', e=>{
+  const f = e.target.files[0];
+  if(!f) return;
+  const url = URL.createObjectURL(f);
+  img.onload = ()=>{
+    // set canvas to image natural size (but scale via CSS)
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    canvas.style.width = Math.min(img.naturalWidth, 1100) + 'px';
+    ctx.drawImage(img,0,0);
+    pitchRect = null;
+    fieldInfo.textContent = 'Nenhum retângulo definido.';
+    xpEl.textContent = '—'; ypEl.textContent = '—';
+    clicksForField = [];
+  };
+  img.src = url;
+});
+
+canvas.addEventListener('click', (ev)=>{
+  if(!img.src) return;
+  const rect = canvas.getBoundingClientRect();
+  // compute coordinates in image-space (px)
+  const sx = (ev.clientX - rect.left) * (canvas.width / rect.width);
+  const sy = (ev.clientY - rect.top) * (canvas.height / rect.height);
+
+  // if user is defining field (shift-click toggles)
+  if(clicksForField.length < 4 && (ev.shiftKey || clicksForField.length > 0)){
+    clicksForField.push({x: sx, y: sy});
+    // If 4 points defined: assume left-top and right-bottom of field (first two = tl, next two = br)
+    if(clicksForField.length === 4){
+      const left = Math.min(clicksForField[0].x, clicksForField[1].x, clicksForField[2].x, clicksForField[3].x);
+      const right = Math.max(clicksForField[0].x, clicksForField[1].x, clicksForField[2].x, clicksForField[3].x);
+      const top = Math.min(clicksForField[0].y, clicksForField[1].y, clicksForField[2].y, clicksForField[3].y);
+      const bottom = Math.max(clicksForField[0].y, clicksForField[1].y, clicksForField[2].y, clicksForField[3].y);
+      pitchRect = { left: left, top: top, width: right-left, height: bottom-top };
+      fieldInfo.textContent = `left:${Math.round(pitchRect.left)} px, top:${Math.round(pitchRect.top)} px, w:${Math.round(pitchRect.width)} px, h:${Math.round(pitchRect.height)} px`;
+      redraw();
+      clicksForField = [];
+    } else {
+      redraw();
+    }
+    return;
+  }
+
+  if(!pitchRect){
+    alert('Defina primeiro o retângulo do campo: shift+clique 4 vezes (ou use "Detectar campo automaticamente").');
+    return;
+  }
+
+  // compute x% / y% (bottom->top mapping)
+  const xPct = ((sx - pitchRect.left) / pitchRect.width) * 100;
+  const yPct = (1 - ((sy - pitchRect.top) / pitchRect.height)) * 100;
+  xpEl.textContent = xPct.toFixed(2);
+  ypEl.textContent = yPct.toFixed(2);
+
+  // draw marker
+  redraw();
+  const scaleX = canvas.width / canvas.getBoundingClientRect().width;
+  ctx.beginPath();
+  ctx.arc(sx, sy, Math.max(6, Math.round(8)), 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(255,200,0,0.9)'; ctx.fill();
+  ctx.strokeStyle = '#222'; ctx.lineWidth = 2; ctx.stroke();
+});
+
+function redraw(){
+  if(!img.src) return;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(img,0,0);
+  if(pitchRect){
+    ctx.strokeStyle = 'rgba(0,255,120,0.85)';
+    ctx.lineWidth = Math.max(3, Math.round(Math.min(canvas.width, canvas.height)*0.002));
+    ctx.strokeRect(pitchRect.left, pitchRect.top, pitchRect.width, pitchRect.height);
+  }
+  // draw temporary clicks
+  clicksForField.forEach(pt=>{
+    ctx.fillStyle = 'rgba(0,150,255,0.85)'; ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 6,0,Math.PI*2); ctx.fill();
+  });
+}
+
+document.getElementById('autoField').addEventListener('click', ()=>{
+  if(!img.src) return alert('Carregue uma imagem primeiro.');
+  // tentativa simples: busca cor clara/retângulo (não robusto, apenas tentativa)
+  // como fallback, pede ao usuário selecionar manualmente.
+  alert('Detecção automática é heurística — se falhar, defina manualmente com Shift+cliques.');
+});
+
+document.getElementById('resetField').addEventListener('click', ()=>{
+  pitchRect = null; clicksForField = []; fieldInfo.textContent = 'Nenhum retângulo definido.'; redraw();
+});
+</script>
+</body>
+</html>
+
